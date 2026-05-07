@@ -13,6 +13,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.set('trust proxy', 1);
+
 // 2. REDIS CONNECTION (Optimized for Deployment)
 const redisClient = new Redis(process.env.REDIS_URL || {
     host: 'redis-16828.c212.ap-south-1-1.ec2.cloud.redislabs.com',
@@ -24,26 +25,26 @@ const redisClient = new Redis(process.env.REDIS_URL || {
 redisClient.on('connect', () => console.log('✅ Connected to Redis Cloud'));
 redisClient.on('error', (err) => console.error('❌ Redis Error:', err));
 
-// 3. RATE LIMITER CONFIGURATION
+// 3. RATE LIMITER CONFIGURATION (100 in 1 Hour)
 const tokenBucket = new RateLimiterRedis({
     storeClient: redisClient,
-    keyPrefix: 'contact_form_v2',
+    keyPrefix: 'contact_form_v3', // Incremented version to reset old counts
     
     points: 100,              // 100 requests
-    duration: 3600,         // 1 Hour (3600 seconds)
+    duration: 3600,           // 1 Hour (3,600 seconds)
     
-    execEvenly: false,
-    execEvenlyMinDelayMs: 50,
+    execEvenly: false,        // Instant response
+    execEvenlyMinDelayMs: 50, 
     
     inMemoryBlockOnConsumed: 100, 
-    inMemoryBlockDuration: 300, // Block locally for 5 minutes if consumed
+    inMemoryBlockDuration: 300, // Block locally for 5 minutes if limit hit
 });
 
 // 4. RATE LIMIT MIDDLEWARE
 const rateLimitMiddleware = (req, res, next) => {
     tokenBucket.consume(req.ip)
         .then((rateLimiterRes) => {
-            res.setHeader('RateLimit-Limit', 10);
+            res.setHeader('RateLimit-Limit', 100);
             res.setHeader('RateLimit-Remaining', rateLimiterRes.remainingPoints);
             next();
         })
@@ -51,7 +52,7 @@ const rateLimitMiddleware = (req, res, next) => {
             res.setHeader('RateLimit-Remaining', 0);
             res.status(429).json({
                 error: 'Too Many Submissions',
-                message: 'Please wait 5 hours before submitting another contact request.'
+                message: 'Please wait an hour before submitting another contact request.'
             });
         });
 };
@@ -62,10 +63,9 @@ const verifyTurnstile = async (req, res, next) => {
         const token = req.body.token;
 
         if (!token) {
-            return res.status(400).json({ error: 'Missing Turnstile token' });
+            return res.status(400).json({ error: 'Security token missing. Please complete the captcha.' });
         }
 
-        // Using built-in fetch (Node 18+) or node-fetch
         const response = await fetch(
             'https://challenges.cloudflare.com/turnstile/v0/siteverify',
             {
@@ -83,19 +83,20 @@ const verifyTurnstile = async (req, res, next) => {
 
         if (!data.success) {
             return res.status(403).json({
-                error: 'Bot detected',
-                details: data['error-codes']
+                error: 'Security Check Failed',
+                message: 'Bot behavior detected or duplicate token used.'
             });
         }
 
         next();
     } catch (err) {
         console.error('Turnstile Error:', err);
-        return res.status(500).json({ error: 'Turnstile verification failed' });
+        return res.status(500).json({ error: 'Security verification currently unavailable.' });
     }
 };
 
 // 6. ENDPOINTS
+// Order: Check Bot first, then check Rate Limit
 app.post('/api/contact', verifyTurnstile, rateLimitMiddleware, (req, res) => {
     const { name, email, message } = req.body;
     
@@ -107,7 +108,7 @@ app.post('/api/contact', verifyTurnstile, rateLimitMiddleware, (req, res) => {
     
     res.json({ 
         success: true, 
-        message: 'Thank you! Your message has been received.' 
+        message: 'Success! Your message has been received securely.' 
     });
 });
 
@@ -115,5 +116,6 @@ app.get('/health', (req, res) => res.send('OK'));
 
 const PORT = process.env.PORT || 4001;
 app.listen(PORT, () => {
-    console.log(`🚀 Contact Backend running on port ${PORT}`);
+    console.log(`🚀 Secure Backend running on port ${PORT}`);
+    console.log(`Policy: 100 req / 1 hour`);
 });
