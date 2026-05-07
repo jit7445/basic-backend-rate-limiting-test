@@ -29,14 +29,14 @@ const tokenBucket = new RateLimiterRedis({
     storeClient: redisClient,
     keyPrefix: 'contact_form_v2',
     
-    points: 10,              // Max budget: 10 requests
-    duration: 60,            // Per 60 seconds (1 minute)
+    points: 100,              // 100 requests
+    duration: 3600,         // 1 Hour (3600 seconds)
     
-    execEvenly: false,       // REMOVED DELAY: Allows instant submissions
-    execEvenlyMinDelayMs: 50, // Allow micro-bursts (20 req/sec)
+    execEvenly: false,
+    execEvenlyMinDelayMs: 50,
     
-    inMemoryBlockOnConsumed: 10, 
-    inMemoryBlockDuration: 5, 
+    inMemoryBlockOnConsumed: 100, 
+    inMemoryBlockDuration: 300, // Block locally for 5 minutes if consumed
 });
 
 // 4. RATE LIMIT MIDDLEWARE
@@ -51,7 +51,7 @@ const rateLimitMiddleware = (req, res, next) => {
             res.setHeader('RateLimit-Remaining', 0);
             res.status(429).json({
                 error: 'Too Many Submissions',
-                message: 'Please wait an hour before submitting another contact request.'
+                message: 'Please wait 5 hours before submitting another contact request.'
             });
         });
 };
