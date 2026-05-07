@@ -56,8 +56,47 @@ const rateLimitMiddleware = (req, res, next) => {
         });
 };
 
-// 5. ENDPOINTS
-app.post('/api/contact', rateLimitMiddleware, (req, res) => {
+// 5. CLOUDFLARE TURNSTILE MIDDLEWARE
+const verifyTurnstile = async (req, res, next) => {
+    try {
+        const token = req.body.token;
+
+        if (!token) {
+            return res.status(400).json({ error: 'Missing Turnstile token' });
+        }
+
+        // Using built-in fetch (Node 18+) or node-fetch
+        const response = await fetch(
+            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    secret: process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '0x4AAAAAADKl74Sam6_nKhjEK-JxsDOtwoQ',
+                    response: token,
+                    remoteip: req.ip
+                })
+            }
+        );
+
+        const data = await response.json();
+
+        if (!data.success) {
+            return res.status(403).json({
+                error: 'Bot detected',
+                details: data['error-codes']
+            });
+        }
+
+        next();
+    } catch (err) {
+        console.error('Turnstile Error:', err);
+        return res.status(500).json({ error: 'Turnstile verification failed' });
+    }
+};
+
+// 6. ENDPOINTS
+app.post('/api/contact', verifyTurnstile, rateLimitMiddleware, (req, res) => {
     const { name, email, message } = req.body;
     
     if (!name || !email || !message) {

@@ -17,6 +17,7 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "ioredis": "^5.10.1",
+    "node-fetch": "^3.3.2",
     "rate-limiter-flexible": "^11.1.0"
   }
 }
